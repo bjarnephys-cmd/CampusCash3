@@ -18,10 +18,11 @@ import { formatCurrency, getTransactionSettlementStats } from '../utils/formatte
 
 interface SharedExpensesViewProps {
   transactions: Transaction[];
-  onToggleSettled: (id: string) => void;
-  onToggleDebtorSettled: (transactionId: string, debtorId: string) => void;
-  onUpdateDebtors?: (transactionId: string, debtors: Debtor[]) => void;
   onAddTransaction: (transaction: Omit<Transaction, 'id'>) => void;
+  onToggleDebtorSettled: (transactionId: string, debtorId: string) => void;
+  onUpdateDebtors?: (transactionId: string, debtors: Debtor[]) => void;  //? betyder den er optional
+  onSetAllDebtors: (transactionId: string, targetSettled: boolean) => void;
+
 }
 
 interface Participant {
@@ -31,10 +32,12 @@ interface Participant {
 
 export const SharedExpensesView: React.FC<SharedExpensesViewProps> = ({
   transactions,
-  onToggleSettled,
+  onAddTransaction,
   onToggleDebtorSettled,
   onUpdateDebtors,
-  onAddTransaction,
+  onSetAllDebtors,
+
+
 }) => {
   // Shared transactions from current ledger
   const sharedTxList = transactions.filter((t) => t.is_shared && t.type === 'expense');
@@ -114,6 +117,7 @@ export const SharedExpensesView: React.FC<SharedExpensesViewProps> = ({
 
   // Add to ledger
   const handleSaveToLedger = () => {
+    console.log('CampusCash3, handleSaveToLedger()' )
     if (parsedAmount <= 0) return;
 
     // Build specific debtors from participants other than 'Mig'
@@ -150,6 +154,9 @@ export const SharedExpensesView: React.FC<SharedExpensesViewProps> = ({
     const updated = currentStats.debtors.map((d) =>
       d.id === debtorId ? { ...d, name: tempDebtorName.trim() } : d
     );
+    console.log('handleSaveDebtorName() called for transaction:', tx.id, 'debtorId:', 
+      debtorId, 'newName:', tempDebtorName.trim(),'debtor', updated);
+    
     onUpdateDebtors(tx.id, updated);
     setEditingDebtorId(null);
   };
@@ -626,7 +633,7 @@ export const SharedExpensesView: React.FC<SharedExpensesViewProps> = ({
                       </span>
                       <button
                         type="button"
-                        onClick={() => onToggleSettled(tx.id)}
+                        onClick={() => onSetAllDebtors(tx.id, !isComplete)}
                         className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 hover:underline"
                       >
                         {isComplete ? 'Nulstil alle til udestående' : 'Marker alle som betalt ✓'}

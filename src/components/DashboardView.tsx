@@ -28,16 +28,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToShared,
 }) => {
   // Calculations
-  const incomeTransactions = transactions.filter((t) => t.type === 'income');
-  const expenseTransactions = transactions.filter((t) => t.type === 'expense');
+  //console.log('DashboardView() called with transactions:', transactions);
+  // Garanter at safeTransactions altid er et ægte array
+  const safeTransactions = Array.isArray(transactions) ? transactions : [];
+  const expenseTransactions = safeTransactions.filter((t) => t.type === 'expense');
+  const incomeTransactions  = safeTransactions.filter((t) => t.type === 'income');
 
-  const totalIncome = incomeTransactions.reduce((acc, t) => acc + t.amount, 0);
-  const totalExpense = expenseTransactions.reduce((acc, t) => acc + t.amount, 0);
+  
+const totalIncome = incomeTransactions.reduce((acc, t) => acc + Number(t.amount || 0), 0); //t.amount modtages som str
+const totalExpense = expenseTransactions.reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-  // Shared calculations based on individual debtor statuses
-  const sharedExpenses = expenseTransactions.filter((t) => t.is_shared);
-  const totalSharedOutlay = sharedExpenses.reduce((acc, t) => acc + t.amount, 0);
-
+// Shared calculations based on individual debtor statuses
+const sharedExpenses = expenseTransactions.filter((t) => t.is_shared);
+const totalSharedOutlay = sharedExpenses.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+ 
+//console.log('totalIncome =', totalIncome,' totalExpense', totalExpense, 'totalDashboardView() sharedExpenses:', sharedExpenses, 'totalSharedOutlay:', totalSharedOutlay);
+  
   let totalPendingOwed = 0;
   let totalReimbursed = 0;
   let yourSharedPortion = 0;
@@ -47,11 +53,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     totalPendingOwed += stats.totalPending;
     totalReimbursed += stats.totalSettled;
     yourSharedPortion += stats.myShare;
+    //console.log(`Transaction ID: ${t.id}, Total Pending: ${stats.totalPending}, Total Settled: ${stats.totalSettled}, My Share: ${stats.myShare}`);
   });
-
+  //console.log('totalPendingOwed',totalPendingOwed,'totalReimbursed',totalReimbursed,'yourSharedPortion',yourSharedPortion);
   // Balance calculation (accounting for reimbursements received from debtors)
   const netBalance = totalIncome - totalExpense + totalReimbursed;
-
+ 
   // Student Daily Pacing Indicator (October has 31 days)
   const currentDayOfMonth = 5;
   const daysInMonth = 31;
@@ -60,8 +67,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const effectiveExpense = totalExpense - totalReimbursed;
   const expensePercentageOfIncome = totalIncome > 0 ? (effectiveExpense / totalIncome) * 100 : 0;
 
+   //console.log('DashboardView() called with transactions:', safeTransactions, 'netBalance:', netBalance, 'dailySpendable:', dailySpendable, 'expensePercentageOfIncome:', expensePercentageOfIncome);
+
+
   // Recent 5 transactions
-  const recentTransactions = [...transactions]
+  
+  const recentTransactions = [...safeTransactions]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5);
 
@@ -233,13 +244,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {recentTransactions.length === 0 ? (
               <p className="text-xs text-slate-400 py-6 text-center">Ingen posteringer endnu.</p>
             ) : (
-              recentTransactions.map((tx) => {
+              recentTransactions.map((tx, index) => {
                 const isIncome = tx.type === 'income';
                 const catColor = CATEGORY_COLORS[tx.category];
 
                 return (
                   <div
-                    key={tx.id}
+                    key={tx.id ? `${tx.id}-${index}` : index} // før key=t.id
                     onClick={() => onNavigateToTransactions()}
                     className="py-3 flex items-center justify-between hover:bg-slate-50/70 -mx-2 px-2 rounded-lg transition-colors cursor-pointer"
                   >

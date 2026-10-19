@@ -1,40 +1,6 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
+// db.ts (Tilpasset til PHP Backend via HTTP fetch med fuld Debtors/Deltager-støtte)
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const dbPath = path.resolve(__dirname, '../campuscash.db');
-const db = new Database(dbPath);
-
-// Enable WAL mode for better concurrency and performance
-db.pragma('journal_mode = WAL');
-
-// Initialize schema
-db.exec(`
-  CREATE TABLE IF NOT EXISTS transactions (
-    id TEXT PRIMARY KEY,
-    date TEXT NOT NULL,
-    title TEXT NOT NULL,
-    amount REAL NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('income', 'expense')),
-    category TEXT NOT NULL,
-    is_shared INTEGER NOT NULL DEFAULT 0,
-    split_between_count INTEGER DEFAULT 1,
-    notes TEXT,
-    settled INTEGER NOT NULL DEFAULT 0,
-    debtors TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
-
-// Safe migration: add column if older db exists
-try {
-  db.exec(`ALTER TABLE transactions ADD COLUMN debtors TEXT;`);
-} catch {
-  // column already exists
-}
+const PHP_API_URL = 'https://bjarnephys.com/MySQL/transactions.php';
 
 export interface DebtorDTO {
   id: string;
@@ -42,21 +8,6 @@ export interface DebtorDTO {
   amount: number;
   settled: boolean;
   settled_at?: string;
-}
-
-export interface DBTransaction {
-  id: string;
-  date: string;
-  title: string;
-  amount: number;
-  type: 'income' | 'expense';
-  category: string;
-  is_shared: number;
-  split_between_count: number | null;
-  notes: string | null;
-  settled: number;
-  debtors: string | null;
-  created_at?: string;
 }
 
 export interface TransactionDTO {
@@ -132,208 +83,180 @@ function buildDefaultDebtors(id: string, amount: number, splitCount: number, set
   }));
 }
 
-function formatRow(row: DBTransaction): TransactionDTO {
+// Hjælpefunktion til at mappe og parse rækker fra PHP-API'et
+function formatRow(row: any): TransactionDTO {
   let debtors: DebtorDTO[] | undefined = undefined;
 
-  if (row.is_shared === 1) {
+  const isSharedBool = Number(row.is_shared) === 1;
+
+  if (isSharedBool) {
     if (row.debtors) {
       try {
-        debtors = JSON.parse(row.debtors);
+        debtors = typeof row.debtors === 'string' ? JSON.parse(row.debtors) : row.debtors;
       } catch {
         debtors = undefined;
       }
     }
 
+    const splitCount = row.split_between_count ? Number(row.split_between_count) : 2;
     if (!debtors || debtors.length === 0) {
-      const splitCount = row.split_between_count && row.split_between_count > 1 ? row.split_between_count : 2;
-      debtors = buildDefaultDebtors(row.id, row.amount, splitCount, row.settled === 1);
+      debtors = buildDefaultDebtors(row.id || 'tx-temp', Number(row.amount) || 0, splitCount, Number(row.settled) === 1);
     }
   }
 
-  // A shared transaction is settled if all its debtors have settled
-  const isSettled = row.is_shared === 1 && debtors && debtors.length > 0
+  // En delt transaktion er først totalt settled, hvis alle debtors har afregnet
+  const isSettled = isSharedBool && debtors && debtors.length > 0
     ? debtors.every((d) => d.settled)
-    : row.settled === 1;
+    : Number(row.settled) === 1;
 
   return {
     id: row.id,
     date: row.date,
     title: row.title,
-    amount: row.amount,
+    amount: Number(row.amount) || 0,
     type: row.type,
     category: row.category,
-    is_shared: row.is_shared === 1,
-    split_between_count: row.split_between_count || undefined,
+    is_shared: isSharedBool,
+    split_between_count: row.split_between_count ? Number(row.split_between_count) : undefined,
     notes: row.notes || undefined,
     settled: isSettled,
     debtors: debtors,
   };
 }
 
-export function seedInitialData() {
-  const count = db.prepare('SELECT count(*) as count FROM transactions').get() as { count: number };
-  if (count.count === 0) {
-    const insert = db.prepare(`
-      INSERT INTO transactions (id, date, title, amount, type, category, is_shared, split_between_count, notes, settled, debtors)
-      VALUES (@id, @date, @title, @amount, @type, @category, @is_shared, @split_between_count, @notes, @settled, @debtors)
-    `);
-
-    const insertMany = db.transaction((items) => {
-      let idx = 101;
-      for (const item of items) {
-        const id = `tx-${idx++}`;
-        const debtors = item.is_shared
-          ? (item.debtors || buildDefaultDebtors(id, item.amount, item.split_between_count || 2, item.settled || false))
-          : null;
-
-        insert.run({
-          id,
-          date: item.date,
-          title: item.title,
-          amount: item.amount,
-          type: item.type,
-          category: item.category,
-          is_shared: item.is_shared ? 1 : 0,
-          split_between_count: item.split_between_count || 1,
-          notes: item.notes || null,
-          settled: item.settled ? 1 : 0,
-          debtors: debtors ? JSON.stringify(debtors) : null,
-        });
-      }
-    });
-
-    insertMany(INITIAL_DATA);
-  }
-}
-
-// Seed on startup if needed
-seedInitialData();
-
-export function getAllTransactions(filters?: { type?: string; category?: string; search?: string }): TransactionDTO[] {
-  let query = 'SELECT * FROM transactions WHERE 1=1';
-  const params: any[] = [];
+export async function getAllTransactions(filters?: { 
+  type?: string; 
+  category?: string; 
+  search?: string; 
+  is_shared?: boolean 
+}): Promise<TransactionDTO[]> {
+  console.log('getAllTransactions()' );
+  const url = new URL(PHP_API_URL);
+  url.searchParams.append('method', 'get');
 
   if (filters?.type && filters.type !== 'all') {
     if (filters.type === 'shared') {
-      query += ' AND is_shared = 1 AND type = "expense"';
+      url.searchParams.append('is_shared', '1');
+      url.searchParams.append('type', 'expense');
     } else {
-      query += ' AND type = ?';
-      params.push(filters.type);
+      url.searchParams.append('type', filters.type);
     }
   }
 
   if (filters?.category && filters.category !== 'all') {
-    query += ' AND category = ?';
-    params.push(filters.category);
+    url.searchParams.append('category', filters.category);
   }
 
   if (filters?.search) {
-    query += ' AND (title LIKE ? OR category LIKE ? OR notes LIKE ?)';
-    const searchParam = `%${filters.search}%`;
-    params.push(searchParam, searchParam, searchParam);
+    url.searchParams.append('search', filters.search);
   }
 
-  query += ' ORDER BY date DESC, created_at DESC';
+  if (filters?.is_shared) {
+    url.searchParams.append('is_shared', '1');
+  }
 
-  const rows = db.prepare(query).all(...params) as DBTransaction[];
-  return rows.map(formatRow);
-}
-
-export function getTransactionById(id: string): TransactionDTO | null {
-  const row = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as DBTransaction | undefined;
-  return row ? formatRow(row) : null;
-}
-
-export function createTransaction(data: Omit<TransactionDTO, 'id'> & { id?: string }): TransactionDTO {
-  const id = data.id || `tx-${Date.now().toString().slice(-6)}`;
-  const splitCount = data.split_between_count || 1;
+  const res = await fetch(url.toString());
+  console.log('response:', res);
+  if (!res.ok) throw new Error('Fejl ved hentning af transaktioner fra PHP API');
   
-  let debtorsJson: string | null = null;
-  if (data.is_shared) {
-    const debtors = data.debtors && data.debtors.length > 0
-      ? data.debtors
-      : buildDefaultDebtors(id, data.amount, splitCount, Boolean(data.settled));
-    debtorsJson = JSON.stringify(debtors);
-  }
-
-  const stmt = db.prepare(`
-    INSERT INTO transactions (id, date, title, amount, type, category, is_shared, split_between_count, notes, settled, debtors)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  stmt.run(
-    id,
-    data.date,
-    data.title,
-    data.amount,
-    data.type,
-    data.category,
-    data.is_shared ? 1 : 0,
-    splitCount,
-    data.notes || null,
-    data.settled ? 1 : 0,
-    debtorsJson
-  );
-
-  return getTransactionById(id)!;
+  const json: any = await res.json();
+  return (json.data || []).map(formatRow);
 }
 
-export function updateTransaction(id: string, data: Partial<TransactionDTO>): TransactionDTO | null {
-  const current = getTransactionById(id);
+export async function getTransactionById(id: string): Promise<TransactionDTO | null> {
+  const res = await fetch(`${PHP_API_URL}?method=get&id=${id}`);
+  if (!res.ok) return null;
+  
+  const json: any = await res.json();
+  const rows = json.data || [];
+  if (rows.length === 0) return null;
+  
+  return formatRow(rows[0]);
+}
+
+export async function createTransaction(data: Omit<TransactionDTO, 'id'> & { id?: string }): Promise<TransactionDTO> {
+  const id = data.id || `tx-${Date.now().toString().slice(-6)}`; //overskrivs i php
+  const splitCount = data.split_between_count || 1;
+
+  let debtors = data.debtors;
+   // Sikr at is_shared bliver behandlet som en sand/falsk værdi
+  const isShared = Boolean(data.is_shared);
+  
+  if (data.is_shared && (!debtors || debtors.length === 0)) {
+    debtors = buildDefaultDebtors(id, data.amount, splitCount, Boolean(data.settled));
+  }
+ 
+
+  // Forbered data til PHP (konverter booleans til 0/1 og debtors til JSON-streng)
+  const payload = {
+    ...data,
+    id,
+    is_shared: data.is_shared ? 1 : 0,
+    settled: data.settled ? 1 : 0,
+    debtors: debtors ? JSON.stringify(debtors) : null
+  };
+  console.log('payload:',payload)
+  const res = await fetch(`${PHP_API_URL}?method=post`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  
+  const json: any = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Fejl ved oprettelse af transaktion');
+  
+  return formatRow(json.transaction || payload);
+}
+
+export async function updateTransaction(id: string, data: Partial<TransactionDTO>): Promise<TransactionDTO | null> {
+  const current = await getTransactionById(id);
   if (!current) return null;
 
   const merged = { ...current, ...data };
   const splitCount = merged.split_between_count || 1;
 
-  let debtorsJson: string | null = null;
-  if (merged.is_shared) {
-    let debtors = merged.debtors;
-    if (!debtors || debtors.length === 0) {
-      debtors = buildDefaultDebtors(id, merged.amount, splitCount, Boolean(merged.settled));
-    }
-    debtorsJson = JSON.stringify(debtors);
-  }
+  let debtors = merged.debtors;
+  if (merged.is_shared && (!debtors || debtors.length === 0)) {
+    debtors = buildDefaultDebtors(id, merged.amount, splitCount, Boolean(merged.settled));
+  } //indsæt standard 
 
-  const isAllSettled = merged.is_shared && merged.debtors && merged.debtors.length > 0
-    ? merged.debtors.every((d) => d.settled)
-    : merged.settled;
+  const isAllSettled = merged.is_shared && debtors && debtors.length > 0
+    ? debtors.every((d) => d.settled)
+    : Boolean(merged.settled);
 
-  const stmt = db.prepare(`
-    UPDATE transactions 
-    SET date = ?, title = ?, amount = ?, type = ?, category = ?, is_shared = ?, split_between_count = ?, notes = ?, settled = ?, debtors = ?
-    WHERE id = ?
-  `);
+  const payload = {
+    ...merged,
+    is_shared: merged.is_shared ? 1 : 0,
+    settled: isAllSettled ? 1 : 0,
+    debtors: debtors ? JSON.stringify(debtors) : null
+  };
 
-  stmt.run(
-    merged.date,
-    merged.title,
-    merged.amount,
-    merged.type,
-    merged.category,
-    merged.is_shared ? 1 : 0,
-    splitCount,
-    merged.notes || null,
-    isAllSettled ? 1 : 0,
-    debtorsJson,
-    id
-  );
-
-  return getTransactionById(id);
+  const res = await fetch(`${PHP_API_URL}?id=${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  
+  const json: any = await res.json();
+  if (!res.ok) return null;
+  
+  return formatRow(json.transaction || payload);
 }
 
-export function deleteTransaction(id: string): boolean {
-  const info = db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
-  return info.changes > 0;
+export async function deleteTransaction(id: string): Promise<boolean> {
+  const res = await fetch(`${PHP_API_URL}?id=${id}`, {
+    method: 'DELETE'
+  });
+  return res.ok;
 }
 
-export function toggleSettledTransaction(id: string): TransactionDTO | null {
-  const current = getTransactionById(id);
+export async function toggleSettledTransaction(id: string): Promise<TransactionDTO | null> {
+  const current = await getTransactionById(id);
   if (!current) return null;
 
   const newSettledState = !current.settled;
-
-  // If shared, also update all debtors to the new state
   let newDebtors = current.debtors;
+  
   if (current.is_shared && current.debtors && current.debtors.length > 0) {
     newDebtors = current.debtors.map((d) => ({
       ...d,
@@ -348,10 +271,11 @@ export function toggleSettledTransaction(id: string): TransactionDTO | null {
   });
 }
 
-export function toggleDebtorSettled(transactionId: string, debtorId: string): TransactionDTO | null {
-  const current = getTransactionById(transactionId);
+// NY FUNKTION: Afkryds en enkelt debtor (delvis afregning)
+export async function toggleDebtorSettled(transactionId: string, debtorId: string): Promise<TransactionDTO | null> {
+  const current = await getTransactionById(transactionId);
   if (!current || !current.debtors) return null;
-
+  console.log('toggleDebtorSettled, debtorId:',debtorId )
   const updatedDebtors = current.debtors.map((d) => {
     if (d.id === debtorId) {
       const nextSettled = !d.settled;
@@ -369,14 +293,12 @@ export function toggleDebtorSettled(transactionId: string, debtorId: string): Tr
   });
 }
 
-export function updateDebtors(transactionId: string, debtors: DebtorDTO[]): TransactionDTO | null {
+export async function updateDebtors(transactionId: string, debtors: DebtorDTO[]): Promise<TransactionDTO | null> {
   return updateTransaction(transactionId, {
     debtors,
   });
 }
 
-export function resetDatabase(): TransactionDTO[] {
-  db.prepare('DELETE FROM transactions').run();
-  seedInitialData();
+export async function resetDatabase(): Promise<TransactionDTO[]> {
   return getAllTransactions();
 }

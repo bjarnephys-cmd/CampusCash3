@@ -97,7 +97,18 @@ export function getDebtorsForTransaction(tx: Transaction) {
 }
 
 export function getTransactionSettlementStats(tx: Transaction) {
-  const debtors = getDebtorsForTransaction(tx);
+  let debtors = getDebtorsForTransaction(tx);
+  // 1. Gør debtors sikker, så den altid er et array
+ 
+  if (typeof debtors === 'string') {
+    try {
+      debtors = JSON.parse(debtors);
+    } catch (e) {
+      debtors = [];
+    }
+  }
+  debtors = Array.isArray(debtors) ? debtors : [];
+  //console.log('in getTransactionSettlementStats(), debtors:',debtors)
   if (debtors.length === 0) {
     return {
       debtors: [],
@@ -112,15 +123,25 @@ export function getTransactionSettlementStats(tx: Transaction) {
     };
   }
 
-  const count = tx.split_between_count || (debtors.length + 1);
-  const myShare = tx.amount / count;
-  const totalOwed = tx.amount - myShare;
+  
+  
 
-  const totalSettled = debtors.filter((d) => d.settled).reduce((acc, d) => acc + d.amount, 0);
-  const totalPending = debtors.filter((d) => !d.settled).reduce((acc, d) => acc + d.amount, 0);
+  const amount = Number(tx.amount) || 0;
+  const splitCount = Number(tx.split_between_count) || (debtors.length + 1);
+
+  // 2. Beregninger med indbyggede sikkerhedstjek
+  const count = Math.max(1, splitCount);
+  const myShare = amount / count;
+  const totalOwed = amount - myShare;  
+ 
+  //console.log('getTransactionSettlementStats() called for transaction:', tx.id,'with debtors:', debtors,'myShare :', myShare,'totalOwed:', totalOwed);
+  const totalSettled = debtors.filter((d) => d.settled).reduce((acc, d) => acc + (Number(d.amount) || 0), 0);
+  const totalPending = debtors.filter((d) => !d.settled).reduce((acc, d) => acc + (Number(d.amount) || 0), 0);
   const settledCount = debtors.filter((d) => d.settled).length;
+  //console.log('getTransactionSettlementStats() computed totals for transaction:', tx.id,'totalSettled:', totalSettled, 'totalPending:', totalPending);
   const isFullySettled = settledCount === debtors.length && debtors.length > 0;
   const isPartiallySettled = settledCount > 0 && settledCount < debtors.length;
+
 
   return {
     debtors,

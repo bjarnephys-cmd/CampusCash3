@@ -39,10 +39,13 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const filteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
       // Search
+   
+      const query = (searchQuery ?? '').toLowerCase();
       const matchesSearch = 
-        tx.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        tx.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (tx.notes && tx.notes.toLowerCase().includes(searchQuery.toLowerCase()));
+      (tx.title ?? '').toLowerCase().includes(query) ||
+      (tx.category ?? '').toLowerCase().includes(query) ||
+      (tx.notes ?? '').toLowerCase().includes(query);
+      
 
       if (!matchesSearch) return false;
 
@@ -276,7 +279,12 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs sm:text-sm">
+
+
                 {filteredTransactions.map((tx) => {
+                  //console.log('tx:',tx.id)
+                  
+                  
                   const isIncome = tx.type === 'income';
                   const catColor = CATEGORY_COLORS[tx.category];
                   const sharedStats = tx.is_shared ? getTransactionSettlementStats(tx) : null;

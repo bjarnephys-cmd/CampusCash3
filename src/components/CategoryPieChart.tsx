@@ -26,6 +26,8 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
 
   // Filter only expenses
+  // Sørg for at den aldrig crasher, selv hvis transactions er undefined
+  transactions = Array.isArray(transactions) ? transactions : [];
   const expenses = transactions.filter((t) => t.type === 'expense');
   const totalExpense = expenses.reduce((sum, t) => sum + t.amount, 0);
 

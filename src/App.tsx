@@ -13,14 +13,18 @@ import {
   deleteTransaction, 
   toggleSettled, 
   toggleDebtorSettled,
+  setAllDebtors,
   updateDebtors,
-  resetTransactions 
+  resetTransactions
+//} from '../server/db';  
 } from './services/api';
 import { Loader2 } from 'lucide-react';
 import { Debtor } from './types/finance';
 
 export default function App() {
-  const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
+
+  // Sørg for at den starter med et tomt array i stedet for at være tom/undefined
+  const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -39,11 +43,19 @@ export default function App() {
       console.warn('API error, using initial dataset:', err);
       setApiError('Forbinder til server...');
       // Fallback to initial transactions
-      setTransactions((prev) => (prev.length > 0 ? prev : INITIAL_TRANSACTIONS));
+      setTransactions((prev) => {
+        prev = Array.isArray(prev) ? prev : [];
+        prev.length > 0 ? prev : INITIAL_TRANSACTIONS;
+        return prev
+      });
     } finally {
       setIsLoading(false);
     }
   }, []);
+
+
+
+
 
   useEffect(() => {
     loadData();
@@ -56,7 +68,12 @@ export default function App() {
     try {
       if (txData.id) {
         // Update in backend
-        const updated = await updateTransaction(txData.id, txData);
+        const response = await updateTransaction(txData.id, txData);  //{transaction,debug} obj 
+        console.log('Svar fra backend:', response);
+         // Træk selve transaktionen ud (hvis den ligger i et .transaction felt)
+        const updated = response.transaction || response;
+    
+  ;
         setTransactions((prev) => prev.map((t) => (t.id === txData.id ? updated : t)));
       } else {
         // Create in backend
@@ -67,9 +84,12 @@ export default function App() {
       console.error('Error saving transaction to backend:', err);
       // Fallback local update
       if (txData.id) {
-        setTransactions((prev) =>
-          prev.map((t) => (t.id === txData.id ? ({ ...t, ...txData } as Transaction) : t))
-        );
+        setTransactions((prev) => {
+          prev = Array.isArray(prev) ? prev : [];
+          return [created, ...prev];
+        });
+
+        
       } else {
         const fallback: Transaction = {
           ...txData,
@@ -109,9 +129,23 @@ export default function App() {
     }
   };
 
+  const handleSetAllDebtors = async (transactionId: string, targetSettled: boolean) => {
+    try {
+      // Kald backend med både ID og den ønskede tilstand
+      const updated = await setAllDebtors(transactionId, targetSettled);
+      setTransactions((prev) => prev.map((t) => (t.id === transactionId ? updated : t)));
+    } catch (err) {
+      console.error('Fejl ved opdatering af alle debitorer:', err);
+    }
+  };
+
+
   const handleToggleDebtorSettled = async (transactionId: string, debtorId: string) => {
+    console.log('handleToggleDebtorSettled() called with transactionId:', transactionId,
+       'debtorId:', debtorId);
     try {
       const updated = await toggleDebtorSettled(transactionId, debtorId);
+      console.log('handleToggleDebtorSettled() backend response:', updated);
       setTransactions((prev) => prev.map((t) => (t.id === transactionId ? updated : t)));
     } catch (err: any) {
       console.error('Error toggling debtor on backend:', err);
@@ -129,6 +163,8 @@ export default function App() {
   };
 
   const handleUpdateDebtors = async (transactionId: string, debtors: Debtor[]) => {
+    console.log('handleUpdateDebtors() called with transactionId:', transactionId, 'debtors:', debtors);
+    
     try {
       const updated = await updateDebtors(transactionId, debtors);
       setTransactions((prev) => prev.map((t) => (t.id === transactionId ? updated : t)));
@@ -184,7 +220,7 @@ export default function App() {
         {isLoading && transactions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-500">
             <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mb-3" />
-            <p className="text-sm font-medium">Henter data fra SQLite databasen...</p>
+            <p className="text-sm font-medium">Henter data fra fjern MySQL database(networkstid 1-2 sek)</p>
           </div>
         ) : (
           <>
@@ -216,9 +252,10 @@ export default function App() {
             {activeTab === 'shared' && (
               <SharedExpensesView
                 transactions={transactions}
-                onToggleSettled={handleToggleSettled}
+                //onToggleSettled ={handleToggleSettled}
                 onToggleDebtorSettled={handleToggleDebtorSettled}
                 onUpdateDebtors={handleUpdateDebtors}
+                onSetAllDebtors = { handleSetAllDebtors }
                 onAddTransaction={(tx) => handleSaveTransaction(tx)}
               />
             )}
@@ -247,17 +284,20 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-700">CampusCash</span>
             <span>·</span>
-            <span>Studieøkonomi & SU-budget (Express + SQLite)</span>
+            <span>Studieøkonomi & SU-budget (Express + MySQL)</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="font-mono text-slate-600">{transactions.length} posteringer synkroniseret</span>
-            <span>·</span>
-            <button
-              onClick={handleResetData}
-              className="hover:text-slate-800 underline transition-colors"
-            >
-              Nulstil SQLite database
-            </button>
+         
+          {/*
+          <button
+            onClick={handleResetData}
+            className="hover:text-slate-800 underline transition-colors"
+          >
+            Nulstil MySQL database
+          </button>
+          */}
+         
           </div>
         </div>
       </footer>
