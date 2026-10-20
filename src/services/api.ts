@@ -1,7 +1,7 @@
 import { Transaction } from '../types/finance';
 const PHP_API_URL = 'https://bjarnephys.com/MySQL/transactions.php';
 
-
+/*
 export interface DebtorDTO {
   id: string;
   name: string;
@@ -10,7 +10,7 @@ export interface DebtorDTO {
   settled_at?: string;
 }
 
-export interface TransactionDTO {
+export interface Transaction {
   id: string;
   date: string;
   title: string;
@@ -23,26 +23,46 @@ export interface TransactionDTO {
   settled?: boolean;
   debtors?: DebtorDTO[];
 }
-
+*/
 const API_BASE = '/api';
 
 export async function fetchTransactions(filters?: {
   type?: string;
   category?: string;
   search?: string;
-}): Promise<Transaction[]> {
+}): Promise<{ data: Transaction[]; PHPtime: any  }> {
+  // Promise<Transaction[]> lover til resten at levere Transaction[]  
+
   const params = new URLSearchParams();
   if (filters?.type && filters.type !== 'all') params.set('type', filters.type);
   if (filters?.category && filters.category !== 'all') params.set('category', filters.category);
   if (filters?.search) params.set('search', filters.search);
-
+  
   const url = `${API_BASE}/transactions${params.toString() ? `?${params.toString()}` : ''}`;
+  //kalder server.ts .kode
+
+  console.log('api.ts/fetchTransactions(), url:',url)
+  
+  //const queryString = params.toString();
+  //const url = `${PHP_API_URL}${queryString ? `?${queryString}` : ''}`;
+  const t1 = performance.now(); // Lige før HTTP fetch
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch transactions: ${response.statusText}`);
   }
-  return response.json();
-}
+
+  // HUSK AWAIT HER:
+  const json = await response.json();
+
+  const t2 = performance.now(); // Svar modtaget over netværket
+
+  console.log('Svar fra PHP backend:', json);
+  console.log('PHP Debug timings:', json._debug); // <--- Her kan du tilgå din _debug!
+  console.log(`Networkstime:        ${(t2 - t1).toFixed(2)} ms`);
+  //console.log('fetchTransactions(), json:',json)
+  json.PHPtime=json._debug.php_total_ms;
+  return json
+} 
 
 
 function buildDefaultDebtors(id: string, amount: number, splitCount: number, settled = false): DebtorDTO[] {

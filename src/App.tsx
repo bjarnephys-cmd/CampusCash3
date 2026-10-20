@@ -16,29 +16,55 @@ import {
   setAllDebtors,
   updateDebtors,
   resetTransactions
-//} from '../server/db';  
-} from './services/api';
+
+} from './services/api';  // fra filen /services/api.ts 
 import { Loader2 } from 'lucide-react';
 import { Debtor } from './types/finance';
 
 export default function App() {
 
-  // Sørg for at den starter med et tomt array i stedet for at være tom/undefined
-  const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
+
+  // Sørg for at den starter som et tomt array [], ikke undefined!
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [prefilledCategoryFilter, setPrefilledCategoryFilter] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [networkTime, setNetworkTime] = useState<number | null>(null);
 
   // Load from Express backend on mount
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
       setApiError(null);
-      const data = await fetchTransactions();
-      setTransactions(data);
+
+    
+      // 1. Start uret lige før kaldet sendes af sted
+      const startTime = performance.now();
+      const response = await fetchTransactions();  // kalder ned i /services/api
+      console.log('response',response)
+      const data =  response.data; //transactions[]
+      const PHPtime =  response.PHPtime;
+      // 2. Stop uret når data er modtaget
+      const endTime = performance.now();
+      //let _NetworkTime = Number(endTime - startTime).toFixed(1) // duer ikke, toFixed() omgør den til str
+      const NetworkTime = endTime - startTime - PHPtime;
+      setNetworkTime(NetworkTime)
+
+      console.log(`🌐 Samlet netværkstid (Frontend -> Websserver-> Svar): ${NetworkTime.toFixed(0)} ms`);
+
+
+      // 🛡️ Ekstra sikkerhedstjek: Er det rent faktisk et array?
+      if (Array.isArray(data)) {
+        setTransactions(data);
+      } else {
+        console.error("Advarsel: Modtog ikke et gyldigt array af transaktioner:", data);
+        setTransactions([]); // Sæt til tomt array som fallback for at undgå crash
+      }
+
+      
     } catch (err: any) {
       console.warn('API error, using initial dataset:', err);
       setApiError('Forbinder til server...');
@@ -284,10 +310,15 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-700">CampusCash</span>
             <span>·</span>
-            <span>Studieøkonomi & SU-budget (Express + MySQL)</span>
+            <span>Studieøkonomi & SU-budget (Express + remote MySQL-database)</span>
+            {networkTime !== null && (
+            <span className="font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-600">
+              ⚡ Netværkstid: {networkTime.toFixed(0)} ms
+            </span>
+            )}
           </div>
           <div className="flex items-center gap-3">
-            <span className="font-mono text-slate-600">{transactions.length} posteringer synkroniseret</span>
+             <span className="font-mono text-slate-600">{transactions.length > 0 ? transactions.length : 0} posteringer synkroniseret</span>
          
           {/*
           <button

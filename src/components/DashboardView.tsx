@@ -259,11 +259,12 @@ const totalSharedOutlay = sharedExpenses.reduce((acc, t) => acc + Number(t.amoun
                         <span className="text-xs font-medium text-slate-900 truncate">
                           {tx.title}
                         </span>
-                        {tx.is_shared && (
+                        {Boolean(tx.is_shared) && (
                           <span className="shrink-0 text-[10px] font-mono text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200/60">
                             Delt
                           </span>
                         )}
+                  
                       </div>
                       <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
                         <span>{formatDate(tx.date)}</span>
@@ -285,11 +286,13 @@ const totalSharedOutlay = sharedExpenses.reduce((acc, t) => acc + Number(t.amoun
                       >
                         {isIncome ? '+' : '-'}{formatCurrency(tx.amount)}
                       </span>
-                      {tx.is_shared && tx.split_between_count && (
+
+                      {Boolean(tx.is_shared) && tx.split_between_count && (
                         <span className="block text-[10px] font-mono text-slate-400 mt-0.5">
                           Din andel: {formatCurrency(tx.amount / tx.split_between_count)}
                         </span>
                       )}
+                     
                     </div>
                   </div>
                 );

@@ -38,7 +38,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   // Filtered & Sorted Transactions
   const filteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
-      // Search
+      // Search, for hver tx tjekkes om den kommer igennem filter, hvis ikke sker return false: der laves ny temp-liste med transaktiion, som returns true gennem filteret, disse fortsætter så gennem sorterings-mekanismen 
    
       const query = (searchQuery ?? '').toLowerCase();
       const matchesSearch = 
@@ -73,7 +73,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       }
       return 0;
     });
-  }, [transactions, searchQuery, typeFilter, categoryFilter, sortOrder]);
+  }, [transactions, searchQuery, typeFilter, categoryFilter, sortOrder]);  // koden i {} køeres kun hvis een af størrelserne i [] ændres!
 
   // Aggregate stats for filtered set
   const filteredTotal = filteredTransactions.reduce((acc, t) => {
@@ -87,7 +87,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     setTypeFilter('all');
     setCategoryFilter('all');
     setSortOrder('date-desc');
-  };
+  }; // ved resetFilters settes disse default-værdier
 
   // Get all unique categories present in transactions plus standard ones
   const availableCategories = useMemo(() => {

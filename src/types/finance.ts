@@ -19,7 +19,7 @@ export interface Transaction {
   split_between_count?: number;
   notes?: string;
   settled?: boolean;
-  debtors?: Debtor[];
+  debtors?: Debtor[];   // ? for at vise optional felt
 }
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [

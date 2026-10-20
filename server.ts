@@ -124,6 +124,7 @@ app.get('/api/transactions', async (req: Request, res: Response) => {
       if (query.length > 0) {
         url += '?' + query.join('&');
       }
+      console.log('server.ts, url', url);
       const t1 = performance.now(); // Lige før HTTP fetch
       const response = await fetch(url);
       const t2 = performance.now(); // Svar modtaget over netværket
@@ -156,8 +157,8 @@ app.get('/api/transactions', async (req: Request, res: Response) => {
       console.log(`-----------------------------------`);
       console.log(`⏱️ SAMLET TID (Node total):  ${node_total} ms\n`);
 
-      // Send kun selve data-arrayet videre til frontenden
-      res.json(result.data || result);
+     
+      res.json(result);
 
     }
     
